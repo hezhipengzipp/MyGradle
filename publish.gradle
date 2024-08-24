@@ -1,0 +1,18 @@
+//创建插件
+class ProjectPlugin implements Plugin<Project>{
+
+    @Override
+    void apply(Project project) {
+
+        project.task("hello"){
+            println "配置阶段 任务名称 输出: hello"
+            doLast {
+                println "执行阶段 hello world"
+            }
+        }
+        println "配置阶段 输出：${project.name}"
+    }
+}
+
+//应用插件
+apply plugin: ProjectPlugin

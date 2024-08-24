@@ -1,0 +1,1 @@
+hello from configurable property
