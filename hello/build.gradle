@@ -1,0 +1,33 @@
+plugins {
+    // Apply the Java Gradle plugin development plugin to add support for developing Gradle plugins
+    id 'java-gradle-plugin'
+    id 'com.gradle.plugin-publish' version '1.2.1'
+}
+
+repositories {
+    // Use Maven Central for resolving dependencies.
+    // You can declare any Maven/Ivy/file repository here.
+    mavenCentral()
+}
+
+dependencies {
+    // Use JUnit test framework for unit tests
+    testImplementation 'junit:junit:4.13'
+}
+group = 'io.github.johndoe'
+version = '1.0'
+
+gradlePlugin {
+    website = '<substitute your project website>'
+    vcsUrl = '<uri to project source repository>'
+    // Define the plugin
+    plugins {
+        greeting {
+            id = 'com.zippsun.hello.greeting'
+            displayName = 'gradle plugin first commit'
+            description = '插件首次提交'
+            tags.set(['gradle', 'zippsun', 'plugins'])
+            implementationClass = 'com.zippsun.hello.GreetingPlugin'
+        }
+    }
+}

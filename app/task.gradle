@@ -1,0 +1,209 @@
+import org.gradle.work.Incremental
+import org.gradle.work.InputChanges
+
+public abstract class GenerateReportTask extends DefaultTask {
+
+    @InputDirectory
+    File sourceDirectory
+
+    @OutputFile
+    File reportFile
+
+    @TaskAction
+    void generateReport() {
+        def fileCount = sourceDirectory.listFiles().count { it.isFile() }
+        def directoryCount = sourceDirectory.listFiles().count { it.isDirectory() }
+
+        def reportContent = """
+            Report for directory: ${sourceDirectory.absolutePath}
+            ------------------------------
+            Number of files: $fileCount
+            Number of subdirectories: $directoryCount
+        """.trim()
+
+        reportFile.text = reportContent
+        println("Report generated at: ${reportFile.absolutePath}")
+    }
+}
+
+tasks.register("generateReport", GenerateReportTask) {
+    sourceDirectory = file("src/main")
+    reportFile = layout.buildDirectory.file("directoryReport.txt").get().asFile
+}
+
+tasks.build.dependsOn("generateReport")
+
+// A project extension
+interface MessageExtension {
+    // A configurable greeting
+    Property<String> getGreeting()
+}
+
+// A task that displays a greeting
+abstract class Greeting extends DefaultTask {
+    // Configurable by the user
+    @Input
+    abstract Property<String> getGreeting()
+
+    // Read-only property calculated from the greeting
+    @Internal
+    final Provider<String> message = greeting.map { it + ' from Gradle' }
+
+    @TaskAction
+    void printMessage() {
+        logger.quiet(message.get())
+    }
+}
+
+// Create the project extension
+project.extensions.create('messages', MessageExtension)
+
+// Create the greeting task
+tasks.register("greeting", Greeting) {
+    // Attach the greeting from the project extension
+    // Note that the values of the project extension have not been configured yet
+    greeting = messages.greeting
+}
+
+messages {
+    // Configure the greeting on the extension
+    // Note that there is no need to reconfigure the task's `greeting` property. This is automatically updated as the extension property changes
+    greeting = 'Hi'
+}
+
+abstract class Producer extends DefaultTask {
+    @OutputFile
+    abstract RegularFileProperty getOutputFile()
+
+    @TaskAction
+    void produce() {
+        String message = 'Hello, World!'
+        def output = outputFile.get().asFile
+        output.text = message
+        logger.quiet("Wrote '${message}' to ${output}")
+    }
+}
+
+abstract class Consumer extends DefaultTask {
+    @InputFile
+    abstract RegularFileProperty getInputFile()
+
+    @TaskAction
+    void consume() {
+        def input = inputFile.get().asFile
+        def message = input.text
+        logger.quiet("Read '${message}' from ${input}")
+    }
+}
+
+def producer = tasks.register("producer", Producer)
+def consumer = tasks.register("consumer", Consumer)
+
+consumer.configure {
+    // Connect the producer task output to the consumer task input
+    // Don't need to add a task dependency to the consumer task. This is automatically added
+    inputFile = producer.flatMap { it.outputFile }
+}
+
+producer.configure {
+    // Set values for the producer lazily
+    // Don't need to update the consumer.inputFile property. This is automatically updated as producer.outputFile changes
+    outputFile = layout.buildDirectory.file('file.txt')
+}
+
+// Change the build directory.
+// Don't need to update producer.outputFile and consumer.inputFile. These are automatically updated as the build directory changes
+//layout.buildDirectory = layout.projectDirectory.dir('output')
+
+abstract class Producer2 extends DefaultTask {
+    @OutputFile
+    abstract RegularFileProperty getOutputFile()
+
+    @TaskAction
+    void produce() {
+        String message = 'Hello, World!'
+        def output = outputFile.get().asFile
+        output.text = message
+        logger.quiet("Wrote '${message}' to ${output}")
+    }
+}
+
+abstract class Consumer2 extends DefaultTask {
+    @InputFiles
+    abstract ListProperty<RegularFile> getInputFiles()
+
+    @TaskAction
+    void consume() {
+        inputFiles.get().each { inputFile ->
+            def input = inputFile.asFile
+            def message = input.text
+            logger.quiet("Read '${message}' from ${input}")
+        }
+    }
+}
+
+def producerOne = tasks.register('producerOne', Producer2)
+def producerTwo = tasks.register('producerTwo', Producer2)
+tasks.register('consumerList', Consumer2) {
+    // Connect the producer task outputs to the consumer task input
+    // Don't need to add task dependencies to the consumer task. These are automatically added
+    inputFiles.add(producerOne.get().outputFile)
+    inputFiles.add(producerTwo.get().outputFile)
+}
+
+// Set values for the producer tasks lazily
+// Don't need to update the consumer.inputFiles property. This is automatically updated as producer.outputFile changes
+producerOne.configure { outputFile = layout.buildDirectory.file('one.txt') }
+producerTwo.configure { outputFile = layout.buildDirectory.file('two.txt') }
+
+// Change the build directory.
+// Don't need to update the task properties. These are automatically updated as the build directory changes
+//layout.buildDirectory = layout.projectDirectory.dir('output')
+
+abstract class IncrementalReverseTask extends DefaultTask {
+    @Incremental
+    @PathSensitive(PathSensitivity.NAME_ONLY)
+    @InputDirectory
+    abstract DirectoryProperty getInputDir()
+
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDir()
+
+    @Input
+    abstract Property<String> getInputProperty()
+
+    @TaskAction
+    void execute(InputChanges inputChanges) {
+        println(inputChanges.incremental
+                ? 'Executing incrementally'
+                : 'Executing non-incrementally'
+        )
+
+        inputChanges.getFileChanges(inputDir).each { change ->
+            if (change.fileType == FileType.DIRECTORY) return
+
+            println "${change.changeType}: ${change.normalizedPath}"
+            def targetFile = outputDir.file(change.normalizedPath).get().asFile
+            if (change.changeType == ChangeType.REMOVED) {
+                targetFile.delete()
+            } else {
+                targetFile.text = change.file.text.reverse()
+            }
+        }
+    }
+}
+
+tasks.register('incrementalReverse', IncrementalReverseTask) {
+    inputDir = file('inputs')
+    outputDir = layout.buildDirectory.dir("outputs")
+    inputProperty = project.properties['taskInputProperty'] ?: 'original'
+    dependsOn("updateInputs")
+}
+tasks.register('updateInputs') {
+    def inputsDir = layout.projectDirectory.dir('inputs')
+    outputs.dir(inputsDir)
+    doLast {
+        inputsDir.file('1.txt').asFile.text = 'Changed content for existing file 1.'
+        inputsDir.file('4.txt').asFile.text = 'Content for new file 4.'
+    }
+}

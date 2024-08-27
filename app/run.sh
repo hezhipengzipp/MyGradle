@@ -1,0 +1,1 @@
+java -cp 'libs/*' gradle.project.app.App
